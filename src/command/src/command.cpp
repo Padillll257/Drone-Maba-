@@ -23,8 +23,9 @@ class CommandNode : public rclcpp::Node {
     config_ = config_manager_->LoadMappingConfig();
 
     joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
-        "/joy", 10,
-        [this](const sensor_msgs::msg::Joy &msg) { JoyCallback(msg); });
+        "/joy", 10, [this](sensor_msgs::msg::Joy::ConstSharedPtr msg) {
+          JoyCallback(msg);
+        });
 
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
         "/mavros/setpoint_velocity/cmd_vel", 10);
@@ -41,22 +42,22 @@ class CommandNode : public rclcpp::Node {
     return 0.0f;
   }
 
-  void JoyCallback(const sensor_msgs::msg::Joy &msg) {
+  void JoyCallback(sensor_msgs::msg::Joy::ConstSharedPtr msg) {
     auto out = geometry_msgs::msg::TwistStamped();
     out.header.frame_id = "base_link";
     out.header.stamp = this->now();
 
     out.twist.linear.x =
-        axisOrZero(msg.axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
+        axisOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
     out.twist.linear.y =
-        axisOrZero(msg.axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
+        axisOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
     out.twist.linear.z =
-        axisOrZero(msg.axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
+        axisOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
 
     out.twist.angular.x = 0.0f;
     out.twist.angular.y = 0.0f;
     out.twist.angular.z =
-        axisOrZero(msg.axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
+        axisOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
 
     cmd_vel_pub_->publish(out);
   }

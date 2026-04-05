@@ -1,0 +1,8 @@
+command:
+  ros__parameters:
+    yaw: 0
+    altitude: 1
+    side: 2
+    forward: 3
+    arm_throttle: 8
+    mode_guided: 9

@@ -1,0 +1,248 @@
+#include "rclcpp/rclcpp.hpp"
+#include "mavros_msgs/msg/state.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
+#include "mavros_msgs/srv/command_bool.hpp"
+#include "mavros_msgs/srv/set_mode.hpp"
+#include "mavros_msgs/srv/command_tol.hpp"
+#include <iostream>
+#include <cmath>
+
+using namespace std::chrono_literals;
+
+class autoNode : public rclcpp::Node {
+public:
+    autoNode() : Node("autoL") {
+        auto qos_sensor = rclcpp::QoS(rclcpp::KeepLast(10))
+            .reliability(rclcpp::ReliabilityPolicy::BestEffort)
+            .durability(rclcpp::DurabilityPolicy::Volatile);
+
+        // Untuk publisher setpoint: Reliable supaya tidak ada yang kelewat
+        auto qos_reliable = rclcpp::QoS(rclcpp::KeepLast(10))
+            .reliability(rclcpp::ReliabilityPolicy::Reliable)
+            .durability(rclcpp::DurabilityPolicy::Volatile);
+
+        pose_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+            "/mavros/local_position/pose", qos_sensor,  // ← pakai qos_sensor
+            std::bind(&autoNode::pose_callback, this, std::placeholders::_1));
+
+        state_sub = this->create_subscription<mavros_msgs::msg::State>(
+            "/mavros/state", qos_sensor,                // ← pakai qos_sensor
+            std::bind(&autoNode::state_callback, this, std::placeholders::_1));
+
+        point_pub = this->create_publisher<geometry_msgs::msg::PoseStamped>(
+            "/mavros/setpoint_position/local", qos_reliable);  // ← pakai qos_reliable
+
+        arm_client     = this->create_client<mavros_msgs::srv::CommandBool>("/mavros/cmd/arming");
+        state_client   = this->create_client<mavros_msgs::srv::SetMode>("/mavros/set_mode");
+        takeoff_client = this->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/takeoff");
+        land_client    = this->create_client<mavros_msgs::srv::CommandTOL>("/mavros/cmd/land");
+
+        send_timer = this->create_wall_timer(
+            50ms, std::bind(&autoNode::timer_callback, this));
+    }
+
+    float height = 0;
+    float step1  = 0;
+    float step2  = 0;
+
+private:
+    mavros_msgs::msg::State         cur_state;
+    geometry_msgs::msg::PoseStamped cur_pose;
+    geometry_msgs::msg::PoseStamped target_pose;
+    int  step            = 0;
+    bool waiting_confirm = false;
+
+    void pose_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg) {
+        cur_pose = *msg;
+    }
+    void state_callback(const mavros_msgs::msg::State::SharedPtr msg) {
+        cur_state = *msg;
+    }
+
+    bool reached_target(float tol = 0.3f) {
+        float dx = cur_pose.pose.position.x - target_pose.pose.position.x;
+        float dy = cur_pose.pose.position.y - target_pose.pose.position.y;
+        float dz = cur_pose.pose.position.z - target_pose.pose.position.z;
+        return std::sqrt(dx*dx + dy*dy + dz*dz) < tol;
+    }
+
+    float get_current_yaw() {
+        auto& q = cur_pose.pose.orientation;
+        return std::atan2(
+            2.0f * (q.w * q.z + q.x * q.y),
+            1.0f - 2.0f * (q.y * q.y + q.z * q.z)
+        );
+    }
+
+    bool reached_yaw(float target_yaw_rad, float tol_rad = 0.05f) {
+        float diff = std::fabs(get_current_yaw() - target_yaw_rad);
+        if (diff > M_PI) diff = 2.0f * M_PI - diff;
+        return diff < tol_rad;
+    }
+
+    void set_target_yaw(float yaw_rad) {
+        target_pose.pose.orientation.x = 0.0;
+        target_pose.pose.orientation.y = 0.0;
+        target_pose.pose.orientation.z = std::sin(yaw_rad / 2.0f);
+        target_pose.pose.orientation.w = std::cos(yaw_rad / 2.0f);
+    }
+
+    void timer_callback() {
+        target_pose.header.stamp    = this->now();
+        target_pose.header.frame_id = "map";
+        point_pub->publish(target_pose);
+
+        switch (step) {
+
+        case 0:
+            if (cur_state.connected) {
+                RCLCPP_INFO(this->get_logger(), "Connected!");
+                step++;
+            }
+            break;
+
+        case 1:
+            if (!waiting_confirm) {
+                auto req = std::make_shared<mavros_msgs::srv::SetMode::Request>();
+                req->custom_mode = "GUIDED";
+                state_client->async_send_request(req,
+                    [this](rclcpp::Client<mavros_msgs::srv::SetMode>::SharedFuture f) {
+                        if (f.get()->mode_sent) {
+                            RCLCPP_INFO(this->get_logger(), "Mode GUIDED berhasil");
+                            step++;
+                        } else {
+                            RCLCPP_WARN(this->get_logger(), "Mode GUIDED gagal, coba lagi...");
+                        }
+                        waiting_confirm = false;
+                    });
+                waiting_confirm = true;
+            }
+            break;
+
+        case 2:
+            if (!waiting_confirm) {
+                auto req = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
+                req->value = true;
+                arm_client->async_send_request(req);
+                RCLCPP_INFO(this->get_logger() , "Arming");
+                waiting_confirm = true;
+            }
+            step++;
+            break;
+
+        case 3:
+            if (!waiting_confirm) {
+                auto req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
+                req->altitude = height;
+                takeoff_client->async_send_request(req,
+                    [this](rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedFuture f) {
+                        if (f.get()->success) {
+                            RCLCPP_INFO(this->get_logger(), "Takeoff! Target %.1f m", height);
+                            target_pose.pose.position.x = cur_pose.pose.position.x;
+                            target_pose.pose.position.y = cur_pose.pose.position.y;
+                            target_pose.pose.position.z = height;
+                            set_target_yaw(0.0f);
+                            step++;
+                        } else {
+                            RCLCPP_WARN(this->get_logger(), "Takeoff gagal, coba lagi...");
+                        }
+                        waiting_confirm = false;
+                    });
+                waiting_confirm = true;
+            }
+            break;
+
+        case 4:
+            if (reached_target(0.3f)) {
+                RCLCPP_INFO(this->get_logger(), "Ketinggian OK! Maju %.1f m", step1);
+                target_pose.pose.position.x = cur_pose.pose.position.x + step1;
+                target_pose.pose.position.y = cur_pose.pose.position.y;
+                target_pose.pose.position.z = height;
+                set_target_yaw(0.0f);
+                step++;
+            }
+            break;
+
+        case 5:
+            if (reached_target(0.3f)) {
+                RCLCPP_INFO(this->get_logger(), "Maju selesai! Rotate 90 ke kiri...");
+                target_pose.pose.position.x = cur_pose.pose.position.x;
+                target_pose.pose.position.y = cur_pose.pose.position.y;
+                target_pose.pose.position.z = height;
+                set_target_yaw(M_PI / 2.0f);
+                step++;
+            }
+            break;
+
+        case 6:
+            if (reached_yaw(M_PI / 2.0f, 0.05f)) {
+                RCLCPP_INFO(this->get_logger(), "Orientasi OK! Maju lagi %.1f m", step2);
+                target_pose.pose.position.x = cur_pose.pose.position.x;
+                target_pose.pose.position.y = cur_pose.pose.position.y + step2;
+                target_pose.pose.position.z = height;
+                set_target_yaw(M_PI / 2.0f);
+                step++;
+            }
+            break;
+
+        case 7:
+            if (reached_target(0.3f)) {
+                RCLCPP_INFO(this->get_logger(), "Semua waypoint selesai! Landing...");
+                step++;
+            }
+            break;
+
+        case 8:
+            if (!waiting_confirm) {
+                auto req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
+                req->altitude  = 0;
+                req->latitude  = 0;
+                req->longitude = 0;
+                req->min_pitch = 0;
+                req->yaw       = 0;
+                land_client->async_send_request(req,
+                    [this](rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedFuture f) {
+                        if (f.get()->success) {
+                            RCLCPP_INFO(this->get_logger(), "Landing berhasil!");
+                            step++;
+                        } else {
+                            RCLCPP_WARN(this->get_logger(), "Landing gagal, coba lagi...");
+                        }
+                        waiting_confirm = false;
+                    });
+                waiting_confirm = true;
+            }
+            break;
+
+        case 9:
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    rclcpp::Subscription<mavros_msgs::msg::State>::SharedPtr         state_sub;
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr    point_pub;
+    rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr         arm_client;
+    rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr             state_client;
+    rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr          takeoff_client;
+    rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr          land_client;
+    rclcpp::TimerBase::SharedPtr send_timer;
+};
+
+int main(int argc, char *argv[]) {
+    float a, b, c;
+    std::cout << "Masukkan ketinggian, jarak maju (X), dan jarak kiri (Y): ";
+    std::cin >> a >> b >> c;
+
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<autoNode>();
+    node->height = a;
+    node->step1  = b;
+    node->step2  = c;
+    rclcpp::spin(node);
+    rclcpp::shutdown();
+    return 0;
+}

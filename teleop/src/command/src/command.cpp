@@ -1,6 +1,3 @@
-#include <chrono>
-#include <command/config_manager.hpp>
-#include <functional>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <mavros_msgs/srv/command_bool.hpp>
 #include <mavros_msgs/srv/command_tol.hpp>
@@ -8,24 +5,13 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 
+#include "command/config_manager.hpp"
+
 class CommandNode : public rclcpp::Node {
- private:
-  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_pub_;
-  rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
-  rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
-  rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
-  std::shared_ptr<ConfigManager> config_manager_;
-  ConfigManager::MappingConfig config_;
-
-  bool prev_takeoff_button_ = false;
-  bool takeoff_in_progress_ = false;
-
-  static constexpr float MAX_LINEAR_SPEED = 1.0f;
-  static constexpr float MAX_ANGULAR_SPEED = 1.0f;
-
  public:
-  CommandNode() : Node("command") {
+  CommandNode() : Node("command"),
+                  prev_takeoff_button_(false),
+                  takeoff_in_progress_(false) {
     config_manager_ = std::make_shared<ConfigManager>(*this);
     config_manager_->DeclareAllParameters();
     config_ = config_manager_->LoadMappingConfig();
@@ -47,7 +33,21 @@ class CommandNode : public rclcpp::Node {
   }
 
  private:
-  float axisOrZero(const std::vector<float> &axes, int index) {
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
+  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_pub_;
+  rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
+  rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
+  rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
+  std::shared_ptr<ConfigManager> config_manager_;
+  ConfigManager::MappingConfig config_;
+
+  bool prev_takeoff_button_;
+  bool takeoff_in_progress_;
+
+  static constexpr float kMaxLinearSpeed = 1.0f;
+  static constexpr float kMaxAngularSpeed = 1.0f;
+
+  float AxisOrZero(const std::vector<float> &axes, int index) {
     if (index >= 0 && index < static_cast<int>(axes.size())) {
       return axes[index];
     }
@@ -57,14 +57,14 @@ class CommandNode : public rclcpp::Node {
     return 0.0f;
   }
 
-  bool button_pressed(const std::vector<int> &buttons, int index) {
+  bool ButtonPressed(const std::vector<int> &buttons, int index) {
     if (index >= 0 && index < static_cast<int>(buttons.size())) {
       return buttons[index] != 0;
     }
     return false;
   }
 
-  void executeTakeoff() {
+  void ExecuteTakeoff() {
     if (takeoff_in_progress_) {
       RCLCPP_WARN(this->get_logger(), "Takeoff already in progress, ignoring.");
       return;
@@ -88,11 +88,11 @@ class CommandNode : public rclcpp::Node {
             return;
           }
           RCLCPP_INFO(this->get_logger(), "GUIDED mode set. Arming...");
-          sendArmRequest();
+          SendArmRequest();
         });
   }
 
-  void sendArmRequest() {
+  void SendArmRequest() {
     if (!arming_client_->service_is_ready()) {
       RCLCPP_ERROR(this->get_logger(), "Arming service not available.");
       takeoff_in_progress_ = false;
@@ -110,11 +110,11 @@ class CommandNode : public rclcpp::Node {
             return;
           }
           RCLCPP_INFO(this->get_logger(), "Armed. Sending takeoff command...");
-          sendTakeoffRequest();
+          SendTakeoffRequest();
         });
   }
 
-  void sendTakeoffRequest() {
+  void SendTakeoffRequest() {
     if (!takeoff_client_->service_is_ready()) {
       RCLCPP_ERROR(this->get_logger(), "Takeoff service not available.");
       takeoff_in_progress_ = false;
@@ -150,22 +150,23 @@ class CommandNode : public rclcpp::Node {
     out.header.stamp = this->now();
 
     out.twist.linear.x =
-        axisOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
+        AxisOrZero(msg->axes, config_.joy_mappings.forward) * kMaxLinearSpeed;
     out.twist.linear.y =
-        axisOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
+        AxisOrZero(msg->axes, config_.joy_mappings.side) * kMaxLinearSpeed;
     out.twist.linear.z =
-        axisOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
+        AxisOrZero(msg->axes, config_.joy_mappings.altitude) * kMaxLinearSpeed;
 
     out.twist.angular.x = 0.0f;
     out.twist.angular.y = 0.0f;
     out.twist.angular.z =
-        axisOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
+        AxisOrZero(msg->axes, config_.joy_mappings.yaw) * kMaxAngularSpeed;
 
     cmd_vel_pub_->publish(out);
 
-    bool takeoff_button = button_pressed(msg->buttons, config_.button_mappings.take_off);
+    bool takeoff_button =
+        ButtonPressed(msg->buttons, config_.button_mappings.take_off);
     if (takeoff_button && !prev_takeoff_button_) {
-      executeTakeoff();
+      ExecuteTakeoff();
     }
     prev_takeoff_button_ = takeoff_button;
   }

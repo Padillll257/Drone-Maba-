@@ -1,20 +1,19 @@
 #include <geometry_msgs/msg/twist_stamped.hpp>
-#include <mavros_msgs/srv/command_bool.hpp>
-#include <mavros_msgs/srv/command_tol.hpp>
-#include <mavros_msgs/srv/set_mode.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 
 #include "command/config_manager.hpp"
+#include "command/drone_controller.hpp"
 
 class CommandNode : public rclcpp::Node {
  public:
   CommandNode() : Node("command"),
-                  prev_takeoff_button_(false),
-                  takeoff_in_progress_(false) {
+                  prev_takeoff_button_(false) {
     config_manager_ = std::make_shared<ConfigManager>(*this);
     config_manager_->DeclareAllParameters();
     config_ = config_manager_->LoadMappingConfig();
+
+    drone_controller_ = std::make_shared<DroneController>(*this);
 
     joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/joy", 10, [this](sensor_msgs::msg::Joy::ConstSharedPtr msg) {
@@ -23,26 +22,16 @@ class CommandNode : public rclcpp::Node {
 
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
         "/mavros/setpoint_velocity/cmd_vel", 10);
-
-    set_mode_client_ = this->create_client<mavros_msgs::srv::SetMode>(
-        "/mavros/set_mode");
-    arming_client_ = this->create_client<mavros_msgs::srv::CommandBool>(
-        "/mavros/cmd/arming");
-    takeoff_client_ = this->create_client<mavros_msgs::srv::CommandTOL>(
-        "/mavros/cmd/takeoff");
   }
 
  private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_pub_;
-  rclcpp::Client<mavros_msgs::srv::SetMode>::SharedPtr set_mode_client_;
-  rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedPtr arming_client_;
-  rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedPtr takeoff_client_;
   std::shared_ptr<ConfigManager> config_manager_;
+  std::shared_ptr<DroneController> drone_controller_;
   ConfigManager::MappingConfig config_;
 
   bool prev_takeoff_button_;
-  bool takeoff_in_progress_;
 
   static constexpr float kMaxLinearSpeed = 1.0f;
   static constexpr float kMaxAngularSpeed = 1.0f;
@@ -62,86 +51,6 @@ class CommandNode : public rclcpp::Node {
       return buttons[index] != 0;
     }
     return false;
-  }
-
-  void ExecuteTakeoff() {
-    if (takeoff_in_progress_) {
-      RCLCPP_WARN(this->get_logger(), "Takeoff already in progress, ignoring.");
-      return;
-    }
-    if (!set_mode_client_->service_is_ready()) {
-      RCLCPP_ERROR(this->get_logger(), "SetMode service not available.");
-      return;
-    }
-    takeoff_in_progress_ = true;
-    RCLCPP_INFO(this->get_logger(), "Takeoff button pressed: setting GUIDED mode.");
-
-    auto mode_req = std::make_shared<mavros_msgs::srv::SetMode::Request>();
-    mode_req->custom_mode = "GUIDED";
-    set_mode_client_->async_send_request(
-        mode_req,
-        [this](rclcpp::Client<mavros_msgs::srv::SetMode>::SharedFuture future) {
-          auto result = future.get();
-          if (!result->mode_sent) {
-            RCLCPP_ERROR(this->get_logger(), "Failed to set GUIDED mode.");
-            takeoff_in_progress_ = false;
-            return;
-          }
-          RCLCPP_INFO(this->get_logger(), "GUIDED mode set. Arming...");
-          SendArmRequest();
-        });
-  }
-
-  void SendArmRequest() {
-    if (!arming_client_->service_is_ready()) {
-      RCLCPP_ERROR(this->get_logger(), "Arming service not available.");
-      takeoff_in_progress_ = false;
-      return;
-    }
-    auto arm_req = std::make_shared<mavros_msgs::srv::CommandBool::Request>();
-    arm_req->value = true;
-    arming_client_->async_send_request(
-        arm_req,
-        [this](rclcpp::Client<mavros_msgs::srv::CommandBool>::SharedFuture future) {
-          auto result = future.get();
-          if (!result->success) {
-            RCLCPP_ERROR(this->get_logger(), "Arming failed.");
-            takeoff_in_progress_ = false;
-            return;
-          }
-          RCLCPP_INFO(this->get_logger(), "Armed. Sending takeoff command...");
-          SendTakeoffRequest();
-        });
-  }
-
-  void SendTakeoffRequest() {
-    if (!takeoff_client_->service_is_ready()) {
-      RCLCPP_ERROR(this->get_logger(), "Takeoff service not available.");
-      takeoff_in_progress_ = false;
-      return;
-    }
-    auto tol_req = std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
-    tol_req->altitude = config_.takeoff.altitude;
-    // min_pitch, yaw, latitude, and longitude are set to 0 to let the
-    // flight controller use its own defaults; MAVROS ignores lat/lon
-    // when they are both 0 and uses the current GPS position instead.
-    tol_req->min_pitch = 0.0f;
-    tol_req->yaw = 0.0f;
-    tol_req->latitude = 0.0f;
-    tol_req->longitude = 0.0f;
-    takeoff_client_->async_send_request(
-        tol_req,
-        [this](rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedFuture future) {
-          auto result = future.get();
-          if (!result->success) {
-            RCLCPP_ERROR(this->get_logger(), "Takeoff command failed.");
-          } else {
-            RCLCPP_INFO(this->get_logger(),
-                        "Takeoff command accepted. Target altitude: %.1f m",
-                        config_.takeoff.altitude);
-          }
-          takeoff_in_progress_ = false;
-        });
   }
 
   void JoyCallback(sensor_msgs::msg::Joy::ConstSharedPtr msg) {
@@ -166,7 +75,7 @@ class CommandNode : public rclcpp::Node {
     bool takeoff_button =
         ButtonPressed(msg->buttons, config_.button_mappings.take_off);
     if (takeoff_button && !prev_takeoff_button_) {
-      ExecuteTakeoff();
+      drone_controller_->Takeoff(config_.takeoff.altitude);
     }
     prev_takeoff_button_ = takeoff_button;
   }

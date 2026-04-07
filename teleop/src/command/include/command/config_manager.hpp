@@ -15,11 +15,17 @@ class ConfigManager {
   struct ButtonMapping {
     int arm_throttle;
     int mode_guided;
+    int take_off;
+  };
+
+  struct TakeoffConfig {
+    float altitude;
   };
 
   struct MappingConfig {
     JoyMapping joy_mappings;
     ButtonMapping button_mappings;
+    TakeoffConfig takeoff;
   };
 
   explicit ConfigManager(rclcpp::Node &node);

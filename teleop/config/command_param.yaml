@@ -6,3 +6,5 @@ command:
     forward: 3
     arm_throttle: 8
     mode_guided: 9
+    take_off: 10
+    takeoff_altitude: 2.0

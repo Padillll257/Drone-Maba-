@@ -43,32 +43,20 @@ class CommandNode : public rclcpp::Node {
     return static_cast<T>(0);
   }
 
-  float AxisOrZero(const std::vector<float> &axes, int index) {
-    if (index >= static_cast<int>(axes.size())) {
-      return 0.0f;
-      RCLCPP_WARN_THROTTLE(
-          this->get_logger(), *this->get_clock(), 2000,
-          "Axis index %d is out of range for Joy axes size %zu", index,
-          axes.size());
-    }
-    return axes[index];
-  }
-
   void JoyCallback(sensor_msgs::msg::Joy::ConstSharedPtr msg) {
     auto twist = geometry_msgs::msg::Twist();
 
-    // TODO: replace AxisOrZero with GetOrZero
     twist.linear.x =
-        AxisOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
+        GetOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
     twist.linear.y =
-        AxisOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
+        GetOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
     twist.linear.z =
-        AxisOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
+        GetOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
 
     twist.angular.x = 0.0f;
     twist.angular.y = 0.0f;
     twist.angular.z =
-        AxisOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
+        GetOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
 
     drone_controller_.SendVelocityCommand(twist);
 

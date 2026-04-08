@@ -64,11 +64,10 @@ void DroneController::UpdateCurrentState(
   current_state_ = *msg;
 
   if (takeoff_state_ == TakeOffState::kTakingOff) {
-    RCLCPP_INFO_THROTTLE(
-        node_.get_logger(), *node_.get_clock(), 2000,
-        "Drone is climbing, waiting to reach takeoff altitude. current "
-        "altitude: %.2f, target altitude: %.2f",
-        pose_.pose.position.z, takeoff_altitude_);
+    RCLCPP_INFO_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
+                         "Drone is climbing to target altitude: %.2f, current "
+                         "altitude: %.2f",
+                         pose_.pose.position.z, takeoff_altitude_);
 
     if (pose_.pose.position.z >=
         takeoff_altitude_ - kTakeoffAltitudeTolerance) {
@@ -79,7 +78,9 @@ void DroneController::UpdateCurrentState(
     }
   }
 
-  if (current_state_.mode != "GUIDED" && takeoff_state_ > TakeOffState::kIdle) {
+  if (current_state_.mode != "GUIDED" &&
+      static_cast<int>(takeoff_state_) >
+          static_cast<int>(TakeOffState::kIdle)) {
     RCLCPP_ERROR(node_.get_logger(),
                  "Drone mode changed to %s, resetting takeoff sequence",
                  current_state_.mode.c_str());
@@ -89,13 +90,14 @@ void DroneController::UpdateCurrentState(
 
   if (current_state_.mode == "GUIDED" &&
       takeoff_state_ == TakeOffState::kSettingGuided) {
-    RCLCPP_INFO(node_.get_logger(), "Drone mode changed to %s, arming drone",
+    RCLCPP_INFO(node_.get_logger(), "Drone mode changed to %s",
                 current_state_.mode.c_str());
     takeoff_state_ = TakeOffState::kArming;
     waiting_for_response_ = false;
   }
 
-  if (!current_state_.armed && takeoff_state_ > TakeOffState::kArming) {
+  if (!current_state_.armed && static_cast<int>(takeoff_state_) >
+                                   static_cast<int>(TakeOffState::kArming)) {
     RCLCPP_ERROR(node_.get_logger(),
                  "Drone disarmed, resetting takeoff sequence");
     takeoff_state_ = TakeOffState::kIdle;
@@ -103,6 +105,7 @@ void DroneController::UpdateCurrentState(
   }
 
   if (current_state_.armed && takeoff_state_ == TakeOffState::kArming) {
+    RCLCPP_INFO(node_.get_logger(), "Drone armed");
     takeoff_state_ = TakeOffState::kTakingOff;
     waiting_for_response_ = false;
   }
@@ -122,73 +125,40 @@ void DroneController::ProceedTakeoffSequence() {
     case TakeOffState::kSettingGuided: {
       RCLCPP_INFO(node_.get_logger(), "Setting mode to GUIDED");
 
-      if (!set_mode_client_->service_is_ready()) {
-        RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
-                             "SetMode service not available, waiting...");
-        return;
-      }
-
-      auto request = std::make_shared<mavros_msgs::srv::SetMode::Request>();
-      request->custom_mode = "GUIDED";
-      set_mode_client_->async_send_request(request);
-
-      waiting_for_response_ = true;
+      SendServiceRequest(set_mode_client_, "SetMode", []() {
+        auto request = std::make_shared<mavros_msgs::srv::SetMode::Request>();
+        request->custom_mode = "GUIDED";
+        return request;
+      });
       break;
     }
 
     case TakeOffState::kArming: {
       RCLCPP_INFO(node_.get_logger(), "Arming the drone");
 
-      if (!arming_client_->service_is_ready()) {
-        RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
-                             "Arming service not available, waiting...");
-        return;
-      }
-
-      auto arm_request =
-          std::make_shared<mavros_msgs::srv::CommandBool::Request>();
-      arm_request->value = true;
-      arming_client_->async_send_request(arm_request);
-
-      waiting_for_response_ = true;
+      SendServiceRequest(arming_client_, "Arming", []() {
+        auto request =
+            std::make_shared<mavros_msgs::srv::CommandBool::Request>();
+        request->value = true;
+        return request;
+      });
       break;
     }
 
     case TakeOffState::kTakingOff: {
       RCLCPP_INFO(node_.get_logger(), "Taking off");
 
-      if (!takeoff_client_->service_is_ready()) {
-        RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
-                             "Takeoff service not available, waiting...");
-        return;
-      }
-
-      auto takeoff_request =
-          std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
-      takeoff_request->altitude =
-          takeoff_altitude_;  // Takeoff to specified altitude
-      takeoff_client_->async_send_request(
-          takeoff_request,
-          [this](rclcpp::Client<mavros_msgs::srv::CommandTOL>::SharedFuture
-                     future) {
-            auto response = future.get();
-            if (response->success) {
-              RCLCPP_INFO(node_.get_logger(), "Takeoff command accepted");
-            } else {
-              RCLCPP_ERROR(node_.get_logger(), "Takeoff command failed");
-              takeoff_state_ = TakeOffState::kIdle;
-              waiting_for_response_ = false;
-            }
-          });
-
-      waiting_for_response_ = true;
+      SendServiceRequest(takeoff_client_, "Takeoff", [this]() {
+        auto request =
+            std::make_shared<mavros_msgs::srv::CommandTOL::Request>();
+        request->altitude = takeoff_altitude_;
+        return request;
+      });
       break;
     }
 
-    case TakeOffState::kHovering: {
-      RCLCPP_INFO_ONCE(node_.get_logger(), "Drone is hovering");
+    case TakeOffState::kHovering:
       break;
-    }
 
     default: {
       RCLCPP_ERROR(node_.get_logger(),

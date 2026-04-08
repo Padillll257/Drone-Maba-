@@ -9,3 +9,4 @@ mav.tlog
 eeprom.bin
 mav.tlog.raw
 terrain/
+__pycache__/

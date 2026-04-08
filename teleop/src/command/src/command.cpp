@@ -36,7 +36,7 @@ class CommandNode : public rclcpp::Node {
  private:
   template <typename T>
   T GetOrZero(const std::vector<T> &values, int index) {
-    if (index >= static_cast<T>(0) && index < static_cast<int>(values.size())) {
+    if (index >= 0 && index < static_cast<int>(values.size())) {
       return values[index];
     }
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,

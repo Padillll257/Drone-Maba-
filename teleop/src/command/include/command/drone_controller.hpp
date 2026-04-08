@@ -8,6 +8,7 @@
 #include <mavros_msgs/srv/command_tol.hpp>
 #include <mavros_msgs/srv/set_mode.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <utility>
 
 class DroneController {
  public:
@@ -21,13 +22,13 @@ class DroneController {
     kHovering,
   };
 
-  explicit DroneController(rclcpp::Node& node);
+  explicit DroneController(rclcpp::Node &node);
 
   void StartTakeoffSequence(float takeoff_altitude);
   void SendVelocityCommand(geometry_msgs::msg::Twist cmd_vel);
 
  private:
-  rclcpp::Node& node_;
+  rclcpp::Node &node_;
 
   rclcpp::TimerBase::SharedPtr timer_;
 
@@ -46,6 +47,24 @@ class DroneController {
   TakeOffState takeoff_state_;
   bool waiting_for_response_;
   float takeoff_altitude_;
+
+  template <typename ClientT, typename RequestFactory>
+  bool SendServiceRequest(const std::shared_ptr<ClientT> &client,
+                          const char *service_name,
+                          RequestFactory &&request_factory) {
+    if (!client->service_is_ready()) {
+      RCLCPP_WARN_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
+                           "%s service not available, waiting...",
+                           service_name);
+      return false;
+    }
+
+    auto request = request_factory();
+    client->async_send_request(request);
+
+    waiting_for_response_ = true;
+    return true;
+  }
 
   void ProceedTakeoffSequence();
   void UpdateCurrentState(const mavros_msgs::msg::State::ConstSharedPtr msg);

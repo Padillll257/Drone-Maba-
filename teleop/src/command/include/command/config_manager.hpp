@@ -16,6 +16,10 @@ class ConfigManager {
     int takeoff;
   };
 
+  struct TakeoffConfig {
+    float altitude;
+  };
+
   struct MappingConfig {
     JoyMapping joy_mappings;
     ButtonMapping button_mappings;
@@ -26,6 +30,7 @@ class ConfigManager {
   void DeclareAllParameters();
 
   MappingConfig LoadMappingConfig();
+  TakeoffConfig LoadTakeoffConfig();
 
  private:
   rclcpp::Node &node_;

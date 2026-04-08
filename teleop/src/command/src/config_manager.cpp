@@ -9,6 +9,8 @@ void ConfigManager::DeclareAllParameters() {
   node_.declare_parameter("forward", 3);
 
   node_.declare_parameter("takeoff", 1);
+
+  node_.declare_parameter("takeoff_altitude", 2.0);
 }
 
 ConfigManager::MappingConfig ConfigManager::LoadMappingConfig() {
@@ -21,5 +23,12 @@ ConfigManager::MappingConfig ConfigManager::LoadMappingConfig() {
 
   config.button_mappings.takeoff = node_.get_parameter("takeoff").as_int();
 
+  return config;
+}
+
+ConfigManager::TakeoffConfig ConfigManager::LoadTakeoffConfig() {
+  TakeoffConfig config;
+  config.altitude =
+      static_cast<float>(node_.get_parameter("takeoff_altitude").as_double());
   return config;
 }

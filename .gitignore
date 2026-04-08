@@ -2,4 +2,10 @@ log/
 logs/
 install/
 build/
-**/.vscode/
+.cache/
+.vscode/
+mav.parm
+mav.tlog
+eeprom.bin
+mav.tlog.raw
+terrain/

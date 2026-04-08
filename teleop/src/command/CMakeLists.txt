@@ -30,7 +30,7 @@ if(BUILD_TESTING)
 endif()
 
 include_directories(include)
-add_executable(command src/command.cpp src/config_manager.cpp)
+add_executable(command src/command.cpp src/config_manager.cpp src/drone_controller.cpp)
 ament_target_dependencies(command rclcpp sensor_msgs geometry_msgs mavros_msgs)
 
 install(TARGETS

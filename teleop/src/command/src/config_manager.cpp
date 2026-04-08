@@ -7,8 +7,8 @@ void ConfigManager::DeclareAllParameters() {
   node_.declare_parameter("altitude", 1);
   node_.declare_parameter("side", 2);
   node_.declare_parameter("forward", 3);
-  node_.declare_parameter("arm_throttle", 8);
-  node_.declare_parameter("mode_guided", 9);
+
+  node_.declare_parameter("takeoff", 1);
 }
 
 ConfigManager::MappingConfig ConfigManager::LoadMappingConfig() {
@@ -19,10 +19,7 @@ ConfigManager::MappingConfig ConfigManager::LoadMappingConfig() {
   config.joy_mappings.forward = node_.get_parameter("forward").as_int();
   config.joy_mappings.side = node_.get_parameter("side").as_int();
 
-  config.button_mappings.mode_guided =
-      node_.get_parameter("mode_guided").as_int();
-  config.button_mappings.arm_throttle =
-      node_.get_parameter("arm_throttle").as_int();
+  config.button_mappings.takeoff = node_.get_parameter("takeoff").as_int();
 
   return config;
 }

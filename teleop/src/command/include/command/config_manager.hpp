@@ -11,10 +11,9 @@ class ConfigManager {
     int forward;
     int side;
   };
-  
+
   struct ButtonMapping {
-    int arm_throttle;
-    int mode_guided;
+    int takeoff;
   };
 
   struct MappingConfig {

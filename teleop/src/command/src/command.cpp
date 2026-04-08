@@ -6,18 +6,21 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 
+#include "command/drone_controller.hpp"
+
 class CommandNode : public rclcpp::Node {
  private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
-  rclcpp::Publisher<geometry_msgs::msg::TwistStamped>::SharedPtr cmd_vel_pub_;
+
   std::shared_ptr<ConfigManager> config_manager_;
   ConfigManager::MappingConfig config_;
+  DroneController drone_controller_;
 
   static constexpr float MAX_LINEAR_SPEED = 1.0f;
   static constexpr float MAX_ANGULAR_SPEED = 1.0f;
 
  public:
-  CommandNode() : Node("command") {
+  CommandNode() : Node("command"), drone_controller_(*this) {
     config_manager_ = std::make_shared<ConfigManager>(*this);
     config_manager_->DeclareAllParameters();
     config_ = config_manager_->LoadMappingConfig();
@@ -26,40 +29,54 @@ class CommandNode : public rclcpp::Node {
         "/joy", 10, [this](sensor_msgs::msg::Joy::ConstSharedPtr msg) {
           JoyCallback(msg);
         });
-
-    cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::TwistStamped>(
-        "/mavros/setpoint_velocity/cmd_vel", 10);
   }
 
  private:
-  float axisOrZero(const std::vector<float> &axes, int index) {
-    if (index >= 0 && index < static_cast<int>(axes.size())) {
-      return axes[index];
+  template <typename T>
+  T GetOrZero(const std::vector<T> &values, int index) {
+    if (index >= static_cast<T>(0) && index < static_cast<int>(values.size())) {
+      return values[index];
     }
     RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
-                         "Axis index %d is out of range for Joy axes size %zu",
-                         index, axes.size());
-    return 0.0f;
+                         "Values index %d is out of range for values size %zu",
+                         index, values.size());
+    return static_cast<T>(0);
+  }
+
+  float AxisOrZero(const std::vector<float> &axes, int index) {
+    if (index >= static_cast<int>(axes.size())) {
+      return 0.0f;
+      RCLCPP_WARN_THROTTLE(
+          this->get_logger(), *this->get_clock(), 2000,
+          "Axis index %d is out of range for Joy axes size %zu", index,
+          axes.size());
+    }
+    return axes[index];
   }
 
   void JoyCallback(sensor_msgs::msg::Joy::ConstSharedPtr msg) {
-    auto out = geometry_msgs::msg::TwistStamped();
-    out.header.frame_id = "base_link";
-    out.header.stamp = this->now();
+    auto twist = geometry_msgs::msg::Twist();
 
-    out.twist.linear.x =
-        axisOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
-    out.twist.linear.y =
-        axisOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
-    out.twist.linear.z =
-        axisOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
+    // TODO: replace AxisOrZero with GetOrZero
+    twist.linear.x =
+        AxisOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
+    twist.linear.y =
+        AxisOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
+    twist.linear.z =
+        AxisOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
 
-    out.twist.angular.x = 0.0f;
-    out.twist.angular.y = 0.0f;
-    out.twist.angular.z =
-        axisOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
+    twist.angular.x = 0.0f;
+    twist.angular.y = 0.0f;
+    twist.angular.z =
+        AxisOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
 
-    cmd_vel_pub_->publish(out);
+    drone_controller_.SendVelocityCommand(twist);
+
+    if (GetOrZero(msg->buttons, config_.button_mappings.takeoff)) {
+      RCLCPP_INFO(this->get_logger(), "Takeoff button pressed");
+      // TODO: get takeoff altitude from config manager
+      drone_controller_.StartTakeoffSequence(2.0f);
+    }
   }
 };
 

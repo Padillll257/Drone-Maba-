@@ -10,25 +10,20 @@ void ConfigManager::DeclareAllParameters() {
 
   node_.declare_parameter("takeoff", 1);
 
-  node_.declare_parameter("takeoff_altitude", 2.0);
+  node_.declare_parameter("takeoff_altitude", 1.0);
 }
 
-ConfigManager::MappingConfig ConfigManager::LoadMappingConfig() {
-  MappingConfig config;
+ConfigManager::Config ConfigManager::LoadConfig() {
+  Config config;
 
   config.joy_mappings.altitude = node_.get_parameter("altitude").as_int();
   config.joy_mappings.yaw = node_.get_parameter("yaw").as_int();
   config.joy_mappings.forward = node_.get_parameter("forward").as_int();
   config.joy_mappings.side = node_.get_parameter("side").as_int();
-
+  
   config.button_mappings.takeoff = node_.get_parameter("takeoff").as_int();
+  
+  config.takeoff_altitude = node_.get_parameter("takeoff_altitude").as_double();
 
-  return config;
-}
-
-ConfigManager::TakeoffConfig ConfigManager::LoadTakeoffConfig() {
-  TakeoffConfig config;
-  config.altitude =
-      static_cast<float>(node_.get_parameter("takeoff_altitude").as_double());
   return config;
 }

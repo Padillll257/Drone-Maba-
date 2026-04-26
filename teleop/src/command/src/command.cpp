@@ -13,8 +13,7 @@ class CommandNode : public rclcpp::Node {
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
 
   std::shared_ptr<ConfigManager> config_manager_;
-  ConfigManager::MappingConfig config_;
-  ConfigManager::TakeoffConfig takeoff_config_;
+  ConfigManager::Config config_;
   DroneController drone_controller_;
 
   static constexpr float MAX_LINEAR_SPEED = 1.0f;
@@ -24,8 +23,7 @@ class CommandNode : public rclcpp::Node {
   CommandNode() : Node("command"), drone_controller_(*this) {
     config_manager_ = std::make_shared<ConfigManager>(*this);
     config_manager_->DeclareAllParameters();
-    config_ = config_manager_->LoadMappingConfig();
-    takeoff_config_ = config_manager_->LoadTakeoffConfig();
+    config_ = config_manager_->LoadConfig();
 
     joy_sub_ = this->create_subscription<sensor_msgs::msg::Joy>(
         "/joy", 10, [this](sensor_msgs::msg::Joy::ConstSharedPtr msg) {
@@ -64,7 +62,7 @@ class CommandNode : public rclcpp::Node {
 
     if (GetOrZero(msg->buttons, config_.button_mappings.takeoff)) {
       RCLCPP_INFO(this->get_logger(), "Takeoff button pressed");
-      drone_controller_.StartTakeoffSequence(takeoff_config_.altitude);
+      drone_controller_.StartTakeoffSequence(config_.takeoff_altitude);
     }
   }
 };

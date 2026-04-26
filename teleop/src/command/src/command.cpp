@@ -64,6 +64,10 @@ class CommandNode : public rclcpp::Node {
       RCLCPP_INFO(this->get_logger(), "Takeoff button pressed");
       drone_controller_.StartTakeoffSequence(config_.takeoff_altitude);
     }
+    if (GetOrZero(msg->buttons, config_.button_mappings.land)) {
+      RCLCPP_INFO(this->get_logger(), "Land button pressed");
+      drone_controller_.Land();
+    }
   }
 };
 

@@ -169,3 +169,24 @@ void DroneController::ProceedTakeoffSequence() {
     }
   }
 }
+
+bool DroneController::Land() {
+  if (!set_mode_client_->service_is_ready()) {
+    RCLCPP_ERROR(node_.get_logger(), "SetMode service not ready!");
+    return false;
+  }
+
+  auto LandCallback =
+      [this](rclcpp::Client<mavros_msgs::srv::SetMode>::SharedFuture future) {
+        if (!future.get()->mode_sent) {
+          RCLCPP_INFO(node_.get_logger(), "Failed to send land request!");
+        }
+        RCLCPP_INFO(node_.get_logger(), "Land request has been sent");
+      };
+
+  RCLCPP_INFO(node_.get_logger(), "Sending land request...");
+  auto request = std::make_shared<mavros_msgs::srv::SetMode::Request>();
+  request->custom_mode = "LAND";
+  set_mode_client_->async_send_request(request, LandCallback);
+  return true;
+}

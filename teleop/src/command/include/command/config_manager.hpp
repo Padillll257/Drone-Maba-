@@ -14,6 +14,7 @@ class ConfigManager {
   
   struct ButtonMapping {
     int takeoff;
+    int land;
   };
 
   struct Config {

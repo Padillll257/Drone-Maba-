@@ -26,6 +26,7 @@ class DroneController {
 
   void StartTakeoffSequence(float takeoff_altitude);
   void SendVelocityCommand(geometry_msgs::msg::Twist cmd_vel);
+  bool Land();
 
  private:
   rclcpp::Node &node_;

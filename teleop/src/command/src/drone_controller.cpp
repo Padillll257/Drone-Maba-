@@ -67,7 +67,7 @@ void DroneController::UpdateCurrentState(
     RCLCPP_INFO_THROTTLE(node_.get_logger(), *node_.get_clock(), 2000,
                          "Drone is climbing to target altitude: %.2f, current "
                          "altitude: %.2f",
-                         pose_.pose.position.z, takeoff_altitude_);
+                         takeoff_altitude_, pose_.pose.position.z);
 
     if (pose_.pose.position.z >=
         takeoff_altitude_ - kTakeoffAltitudeTolerance) {

@@ -17,8 +17,8 @@ DroneController::DroneController(rclcpp::Node& node)
         pose_ = *msg;
       });
 
-  cmd_vel_pub_ = node_.create_publisher<geometry_msgs::msg::TwistStamped>(
-      "/mavros/setpoint_velocity/cmd_vel", 10);
+  cmd_vel_pub_ = node_.create_publisher<geometry_msgs::msg::Twist>(
+      "/mavros/setpoint_velocity/cmd_vel_unstamped", 10);
 
   set_mode_client_ =
       node_.create_client<mavros_msgs::srv::SetMode>("mavros/set_mode");
@@ -52,10 +52,8 @@ void DroneController::SendVelocityCommand(geometry_msgs::msg::Twist cmd_vel) {
     return;
   }
 
-  auto cmd_vel_stamped = geometry_msgs::msg::TwistStamped();
-  cmd_vel_stamped.header.frame_id = "base_link";
-  cmd_vel_stamped.header.stamp = node_.now();
-  cmd_vel_stamped.twist = cmd_vel;
+  auto cmd_vel_stamped = geometry_msgs::msg::Twist();
+  cmd_vel_stamped = cmd_vel;
   cmd_vel_pub_->publish(cmd_vel_stamped);
 }
 

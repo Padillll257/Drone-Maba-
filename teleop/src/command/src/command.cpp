@@ -16,8 +16,8 @@ class CommandNode : public rclcpp::Node {
   ConfigManager::Config config_;
   DroneController drone_controller_;
 
-  static constexpr float MAX_LINEAR_SPEED = 1.0f;
-  static constexpr float MAX_ANGULAR_SPEED = 1.0f;
+  static constexpr float MAX_LINEAR_SPEED = 5.0f;
+  static constexpr float MAX_ANGULAR_SPEED = 5.0f;
 
  public:
   CommandNode() : Node("command"), drone_controller_(*this) {

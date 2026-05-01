@@ -11,3 +11,5 @@ command:
     land: 2
 
     takeoff_altitude: 1.0 # Meters
+    max_linear_speed: 5.0
+    max_angular_speed: 5.0

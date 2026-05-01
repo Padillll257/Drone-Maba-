@@ -16,9 +16,6 @@ class CommandNode : public rclcpp::Node {
   ConfigManager::Config config_;
   DroneController drone_controller_;
 
-  static constexpr float MAX_LINEAR_SPEED = 5.0f;
-  static constexpr float MAX_ANGULAR_SPEED = 5.0f;
-
  public:
   CommandNode() : Node("command"), drone_controller_(*this) {
     config_manager_ = std::make_shared<ConfigManager>(*this);
@@ -46,17 +43,17 @@ class CommandNode : public rclcpp::Node {
   void JoyCallback(sensor_msgs::msg::Joy::ConstSharedPtr msg) {
     auto twist = geometry_msgs::msg::Twist();
 
-    twist.linear.x =
-        GetOrZero(msg->axes, config_.joy_mappings.forward) * MAX_LINEAR_SPEED;
-    twist.linear.y =
-        GetOrZero(msg->axes, config_.joy_mappings.side) * MAX_LINEAR_SPEED;
-    twist.linear.z =
-        GetOrZero(msg->axes, config_.joy_mappings.altitude) * MAX_LINEAR_SPEED;
+    twist.linear.x = GetOrZero(msg->axes, config_.joy_mappings.forward) *
+                     config_.max_linear_speed;
+    twist.linear.y = GetOrZero(msg->axes, config_.joy_mappings.side) *
+                     config_.max_linear_speed;
+    twist.linear.z = GetOrZero(msg->axes, config_.joy_mappings.altitude) *
+                     config_.max_linear_speed;
 
     twist.angular.x = 0.0f;
     twist.angular.y = 0.0f;
-    twist.angular.z =
-        GetOrZero(msg->axes, config_.joy_mappings.yaw) * MAX_ANGULAR_SPEED;
+    twist.angular.z = GetOrZero(msg->axes, config_.joy_mappings.yaw) *
+                      config_.max_angular_speed;
 
     drone_controller_.SendVelocityCommand(twist);
 

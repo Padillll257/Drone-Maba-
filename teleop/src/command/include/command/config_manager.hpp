@@ -20,7 +20,10 @@ class ConfigManager {
   struct Config {
     JoyMapping joy_mappings;
     ButtonMapping button_mappings;
+
     double takeoff_altitude;
+    double max_linear_speed;
+    double max_angular_speed;
   };
 
   explicit ConfigManager(rclcpp::Node &node);

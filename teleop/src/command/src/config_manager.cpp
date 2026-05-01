@@ -12,6 +12,8 @@ void ConfigManager::DeclareAllParameters() {
   node_.declare_parameter("land", 2);
 
   node_.declare_parameter("takeoff_altitude", 1.0);
+  node_.declare_parameter("max_linear_speed", 5.0);
+  node_.declare_parameter("max_angular_speed", 5.0);
 }
 
 ConfigManager::Config ConfigManager::LoadConfig() {
@@ -26,6 +28,9 @@ ConfigManager::Config ConfigManager::LoadConfig() {
   config.button_mappings.land = node_.get_parameter("land").as_int();
 
   config.takeoff_altitude = node_.get_parameter("takeoff_altitude").as_double();
+  config.max_linear_speed = node_.get_parameter("max_linear_speed").as_double();
+  config.max_angular_speed =
+      node_.get_parameter("max_angular_speed").as_double();
 
   return config;
 }

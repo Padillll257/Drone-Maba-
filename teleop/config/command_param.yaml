@@ -1,10 +1,13 @@
 command:
   ros__parameters:
+    # Controller axes
     yaw: 0
     altitude: 1
     side: 2
     forward: 3
-    arm_throttle: 8
-    mode_guided: 9
     
-    takeoff_altitude: 10.0 # Meters
+    # Controller buttons
+    takeoff: 1
+    land: 2
+
+    takeoff_altitude: 1.0 # Meters
